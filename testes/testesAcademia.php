@@ -1,6 +1,6 @@
 <?php
 
-require_once __DIR__ . '/../scr/app.php';
+require_once __DIR__ . '/../src/app.php';
 
 function conferir(bool $condicao, string $mensagem): void
 {

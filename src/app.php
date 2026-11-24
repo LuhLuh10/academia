@@ -1,5 +1,11 @@
 <?php
 
+use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\ServerRequestInterface;
+use Slim\Factory\AppFactory;
+
+require __DIR__ . '/../vendor/autoload.php';
+
 function lerSituacoes(string $arquivo): array
 {
     if (!file_exists($arquivo)) {
@@ -12,7 +18,6 @@ function lerSituacoes(string $arquivo): array
     }
 
     $situacoes = json_decode($conteudo, true);
-
     if (!is_array($situacoes)) {
         throw new RuntimeException('Não foi possível ler os dados salvos.');
     }
@@ -24,7 +29,7 @@ function salvarSituacoes(string $arquivo, array $situacoes): bool
 {
     $conteudo = json_encode($situacoes, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 
-    return file_put_contents($arquivo, $conteudo, LOCK_EX) !== false;
+    return $conteudo !== false && file_put_contents($arquivo, $conteudo, LOCK_EX) !== false;
 }
 
 function dadosValidos($dados): bool
@@ -135,25 +140,35 @@ function processarRequisicao(string $metodo, string $caminho, $dados, string $ar
     return [405, ['erro' => 'Método não permitido.']];
 }
 
-if (isset($_SERVER['SCRIPT_FILENAME']) && realpath($_SERVER['SCRIPT_FILENAME']) === __FILE__) {
-    header('Content-Type: application/json; charset=utf-8');
+$app = AppFactory::create();
+$arquivo = __DIR__ . '/situacoes.json';
 
-    $conteudo = file_get_contents('php://input');
+$responder = function (
+    ServerRequestInterface $request,
+    ResponseInterface $response,
+    array $args
+) use ($arquivo): ResponseInterface {
+    $conteudo = (string) $request->getBody();
     $dados = $conteudo === '' ? null : json_decode($conteudo, true);
 
     try {
         [$status, $resposta] = processarRequisicao(
-            $_SERVER['REQUEST_METHOD'],
-            $_SERVER['REQUEST_URI'],
+            $request->getMethod(),
+            $request->getUri()->getPath(),
             $dados,
-            __DIR__ . '/situacoes.json'
+            $arquivo
         );
     } catch (RuntimeException $erro) {
-        http_response_code(500);
-        echo json_encode(['erro' => $erro->getMessage()], JSON_UNESCAPED_UNICODE);
-        exit;
+        $status = 500;
+        $resposta = ['erro' => $erro->getMessage()];
     }
 
-    http_response_code($status);
-    echo json_encode($resposta, JSON_UNESCAPED_UNICODE);
-}
+    $response->getBody()->write(json_encode($resposta, JSON_UNESCAPED_UNICODE));
+
+    return $response
+        ->withStatus($status)
+        ->withHeader('Content-Type', 'application/json; charset=utf-8');
+};
+
+$app->map(['GET', 'POST'], '/situacao', $responder);
+$app->map(['GET', 'PUT', 'DELETE'], '/situacao/{id}', $responder);
