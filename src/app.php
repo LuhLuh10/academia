@@ -1,10 +1,10 @@
 <?php
 
-use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\ServerRequestInterface;
-use Slim\Factory\AppFactory;
-
 require __DIR__ . '/../vendor/autoload.php';
+
+use Slim\Exception\HttpException;
+use Slim\Factory\AppFactory;
+use Slim\Psr7\Factory\ResponseFactory;
 
 function lerSituacoes(string $arquivo): array
 {
@@ -14,12 +14,12 @@ function lerSituacoes(string $arquivo): array
 
     $conteudo = file_get_contents($arquivo);
     if ($conteudo === false) {
-        throw new RuntimeException('Não foi possível ler os dados salvos.');
+        throw new RuntimeException('Não foi possível ler os registros.');
     }
 
     $situacoes = json_decode($conteudo, true);
     if (!is_array($situacoes)) {
-        throw new RuntimeException('Não foi possível ler os dados salvos.');
+        throw new RuntimeException('Não foi possível ler os registros.');
     }
 
     return $situacoes;
@@ -32,143 +32,195 @@ function salvarSituacoes(string $arquivo, array $situacoes): bool
     return $conteudo !== false && file_put_contents($arquivo, $conteudo, LOCK_EX) !== false;
 }
 
-function dadosValidos($dados): bool
-{
-    return is_array($dados)
-        && isset($dados['nome'], $dados['unidadeCurricular'], $dados['aprovado'])
-        && is_string($dados['nome'])
-        && trim($dados['nome']) !== ''
-        && is_string($dados['unidadeCurricular'])
-        && trim($dados['unidadeCurricular']) !== ''
-        && is_bool($dados['aprovado']);
-}
-
-function processarRequisicao(string $metodo, string $caminho, $dados, string $arquivo): array
-{
-    $partes = explode('/', trim(parse_url($caminho, PHP_URL_PATH), '/'));
-    $situacoes = lerSituacoes($arquivo);
-
-    if ($partes[0] !== 'situacao' || count($partes) > 2) {
-        return [404, ['erro' => 'Endpoint não encontrado.']];
-    }
-
-    if (count($partes) === 1 && $metodo === 'POST') {
-        if (!dadosValidos($dados)) {
-            return [400, ['erro' => 'Informe nome, unidadeCurricular e aprovado corretamente.']];
-        }
-
-        $id = 1;
-        foreach ($situacoes as $situacao) {
-            $id = max($id, $situacao['id'] + 1);
-        }
-
-        $novaSituacao = [
-            'id' => $id,
-            'nome' => trim($dados['nome']),
-            'unidadeCurricular' => trim($dados['unidadeCurricular']),
-            'aprovado' => $dados['aprovado'],
-        ];
-        $situacoes[] = $novaSituacao;
-
-        if (!salvarSituacoes($arquivo, $situacoes)) {
-            return [500, ['erro' => 'Não foi possível salvar a situação.']];
-        }
-
-        return [201, $novaSituacao];
-    }
-
-    if (count($partes) === 1 && $metodo === 'GET') {
-        return [200, $situacoes];
-    }
-
-    if (count($partes) === 2) {
-        if (!ctype_digit($partes[1]) || (int) $partes[1] < 1) {
-            return [404, ['erro' => 'Estudante não encontrado.']];
-        }
-
-        $id = (int) $partes[1];
-        foreach ($situacoes as $indice => $situacao) {
-            if ($situacao['id'] !== $id) {
-                continue;
-            }
-
-            if ($metodo === 'GET') {
-                return [200, [
-                    'nome' => $situacao['nome'],
-                    'unidadeCurricular' => $situacao['unidadeCurricular'],
-                    'aprovado' => $situacao['aprovado'],
-                ]];
-            }
-
-            if ($metodo === 'PUT') {
-                if (!is_array($dados)
-                    || count($dados) !== 1
-                    || !array_key_exists('aprovado', $dados)
-                    || !is_bool($dados['aprovado'])) {
-                    return [400, ['erro' => 'Informe somente o campo aprovado como true ou false.']];
-                }
-
-                $situacoes[$indice]['aprovado'] = $dados['aprovado'];
-
-                if (!salvarSituacoes($arquivo, $situacoes)) {
-                    return [500, ['erro' => 'Não foi possível salvar a situação.']];
-                }
-
-                return [200, [
-                    'nome' => $situacoes[$indice]['nome'],
-                    'unidadeCurricular' => $situacoes[$indice]['unidadeCurricular'],
-                    'aprovado' => $situacoes[$indice]['aprovado'],
-                ]];
-            }
-
-            if ($metodo === 'DELETE') {
-                array_splice($situacoes, $indice, 1);
-
-                if (!salvarSituacoes($arquivo, $situacoes)) {
-                    return [500, ['erro' => 'Não foi possível remover a situação.']];
-                }
-
-                return [200, ['mensagem' => 'Registro removido com sucesso.']];
-            }
-
-            return [405, ['erro' => 'Método não permitido.']];
-        }
-
-        return [404, ['erro' => 'Estudante não encontrado.']];
-    }
-
-    return [405, ['erro' => 'Método não permitido.']];
-}
-
 $app = AppFactory::create();
-$arquivo = __DIR__ . '/situacoes.json';
+$arquivo = getenv('SITUACOES_ARQUIVO');
+if ($arquivo === false || $arquivo === '') {
+    $arquivo = __DIR__ . '/situacoes.json';
+}
 
-$responder = function (
-    ServerRequestInterface $request,
-    ResponseInterface $response,
-    array $args
-) use ($arquivo): ResponseInterface {
-    $conteudo = (string) $request->getBody();
-    $dados = $conteudo === '' ? null : json_decode($conteudo, true);
+$app->addBodyParsingMiddleware();
+$app->addRoutingMiddleware();
 
-    try {
-        [$status, $resposta] = processarRequisicao(
-            $request->getMethod(),
-            $request->getUri()->getPath(),
-            $dados,
-            $arquivo
-        );
-    } catch (RuntimeException $erro) {
-        $status = 500;
-        $resposta = ['erro' => $erro->getMessage()];
+$errorMiddleware = $app->addErrorMiddleware(false, false, false);
+$errorMiddleware->setDefaultErrorHandler(function ($request, $exception) {
+    $status = $exception instanceof HttpException ? $exception->getCode() : 500;
+    $mensagem = 'Ocorreu um erro interno.';
+
+    if ($status === 404) {
+        $mensagem = 'Rota não encontrada.';
+    } elseif ($status === 405) {
+        $mensagem = 'Método HTTP não permitido.';
+    } elseif ($status === 400) {
+        $mensagem = 'Requisição inválida.';
     }
 
-    $response->getBody()->write(json_encode($resposta, JSON_UNESCAPED_UNICODE));
+    $response = (new ResponseFactory())->createResponse($status);
+    $response->getBody()->write(json_encode(['erro' => $mensagem], JSON_UNESCAPED_UNICODE));
+
+    return $response->withHeader('Content-Type', 'application/json; charset=utf-8');
+});
+
+// Status
+$app->get('/status', function ($request, $response) {
+    $response->getBody()->write(json_encode(['status' => 'ok']));
 
     return $response
-        ->withStatus($status)
-        ->withHeader('Content-Type', 'application/json; charset=utf-8');
-};
+        ->withHeader('Content-Type', 'application/json')
+        ->withStatus(200);
+});
 
-$app->map(['GET', 'POST'], '/situacao', $responder);
-$app->map(['GET', 'PUT', 'DELETE'], '/situacao/{id}', $responder);
+// GET para listar
+$app->get('/situacao', function ($request, $response) use ($arquivo) {
+    $situacoes = lerSituacoes($arquivo);
+    $response->getBody()->write(json_encode($situacoes, JSON_UNESCAPED_UNICODE));
+
+    return $response
+        ->withHeader('Content-Type', 'application/json; charset=utf-8')
+        ->withStatus(200);
+});
+
+// POST para criar uma nova situação
+$app->post('/situacao', function ($request, $response) use ($arquivo) {
+    $dados = $request->getParsedBody();
+
+    if (!is_array($dados)
+        || !isset($dados['nome'], $dados['unidadeCurricular'], $dados['aprovado'])
+        || !is_string($dados['nome'])
+        || trim($dados['nome']) === ''
+        || !is_string($dados['unidadeCurricular'])
+        || trim($dados['unidadeCurricular']) === ''
+        || !is_bool($dados['aprovado'])) {
+        $response->getBody()->write(json_encode([
+            'erro' => 'Informe nome, unidadeCurricular e aprovado corretamente.',
+        ], JSON_UNESCAPED_UNICODE));
+
+        return $response
+            ->withHeader('Content-Type', 'application/json; charset=utf-8')
+            ->withStatus(400);
+    }
+
+    $situacoes = lerSituacoes($arquivo);
+    $proximoId = 1;
+    foreach ($situacoes as $situacao) {
+        $proximoId = max($proximoId, $situacao['id'] + 1);
+    }
+
+    $novaSituacao = [
+        'id' => $proximoId,
+        'nome' => trim($dados['nome']),
+        'unidadeCurricular' => trim($dados['unidadeCurricular']),
+        'aprovado' => $dados['aprovado'],
+    ];
+    $situacoes[] = $novaSituacao;
+    if (!salvarSituacoes($arquivo, $situacoes)) {
+        throw new RuntimeException('Não foi possível salvar o registro.');
+    }
+
+    $response->getBody()->write(json_encode($novaSituacao, JSON_UNESCAPED_UNICODE));
+
+    return $response
+        ->withHeader('Content-Type', 'application/json; charset=utf-8')
+        ->withStatus(201);
+});
+
+// GET por ID
+$app->get('/situacao/{id}', function ($request, $response, $args) use ($arquivo) {
+    $situacoes = lerSituacoes($arquivo);
+
+    foreach ($situacoes as $situacao) {
+        if ($situacao['id'] === (int) $args['id']) {
+            $dados = [
+                'nome' => $situacao['nome'],
+                'unidadeCurricular' => $situacao['unidadeCurricular'],
+                'aprovado' => $situacao['aprovado'],
+            ];
+            $response->getBody()->write(json_encode($dados, JSON_UNESCAPED_UNICODE));
+
+            return $response
+                ->withHeader('Content-Type', 'application/json; charset=utf-8')
+                ->withStatus(200);
+        }
+    }
+
+    $response->getBody()->write(json_encode(['erro' => 'Estudante não encontrado.'], JSON_UNESCAPED_UNICODE));
+
+    return $response
+        ->withHeader('Content-Type', 'application/json; charset=utf-8')
+        ->withStatus(404);
+});
+
+// PUT
+$app->put('/situacao/{id}', function ($request, $response, $args) use ($arquivo) {
+    $dados = $request->getParsedBody();
+
+    if (!is_array($dados)
+        || count($dados) !== 1
+        || !array_key_exists('aprovado', $dados)
+        || !is_bool($dados['aprovado'])) {
+        $response->getBody()->write(json_encode([
+            'erro' => 'Informe somente o campo aprovado como true ou false.',
+        ], JSON_UNESCAPED_UNICODE));
+
+        return $response
+            ->withHeader('Content-Type', 'application/json; charset=utf-8')
+            ->withStatus(400);
+    }
+
+    $situacoes = lerSituacoes($arquivo);
+    foreach ($situacoes as &$situacao) {
+        if ($situacao['id'] === (int) $args['id']) {
+            $situacao['aprovado'] = $dados['aprovado'];
+            $resposta = [
+                'nome' => $situacao['nome'],
+                'unidadeCurricular' => $situacao['unidadeCurricular'],
+                'aprovado' => $situacao['aprovado'],
+            ];
+            unset($situacao);
+
+            if (!salvarSituacoes($arquivo, $situacoes)) {
+                throw new RuntimeException('Não foi possível salvar o registro.');
+            }
+
+            $response->getBody()->write(json_encode($resposta, JSON_UNESCAPED_UNICODE));
+
+            return $response
+                ->withHeader('Content-Type', 'application/json; charset=utf-8')
+                ->withStatus(200);
+        }
+    }
+    unset($situacao);
+
+    $response->getBody()->write(json_encode(['erro' => 'Estudante não encontrado.'], JSON_UNESCAPED_UNICODE));
+
+    return $response
+        ->withHeader('Content-Type', 'application/json; charset=utf-8')
+        ->withStatus(404);
+});
+
+// DELETE
+$app->delete('/situacao/{id}', function ($request, $response, $args) use ($arquivo) {
+    $situacoes = lerSituacoes($arquivo);
+
+    foreach ($situacoes as $indice => $situacao) {
+        if ($situacao['id'] === (int) $args['id']) {
+            array_splice($situacoes, $indice, 1);
+            if (!salvarSituacoes($arquivo, $situacoes)) {
+                throw new RuntimeException('Não foi possível remover o registro.');
+            }
+
+            $response->getBody()->write(json_encode([
+                'mensagem' => 'Registro removido com sucesso.',
+            ], JSON_UNESCAPED_UNICODE));
+
+            return $response
+                ->withHeader('Content-Type', 'application/json; charset=utf-8')
+                ->withStatus(200);
+        }
+    }
+
+    $response->getBody()->write(json_encode(['erro' => 'Estudante não encontrado.'], JSON_UNESCAPED_UNICODE));
+
+    return $response
+        ->withHeader('Content-Type', 'application/json; charset=utf-8')
+        ->withStatus(404);
+});

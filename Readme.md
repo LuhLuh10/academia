@@ -39,6 +39,7 @@ Requisições com dados devem estar em JSON e usar o cabeçalho `Content-Type: a
 
 | Método | Endereço | O que faz |
 | --- | --- | --- |
+| GET | `/status` | Verifica se a API está funcionando. |
 | POST | `/situacao` | Cadastra uma situação com `nome`, `unidadeCurricular` e `aprovado`. |
 | GET | `/situacao` | Lista as situações cadastradas. |
 | GET | `/situacao/{id}` | Consulta uma situação pelo ID. |
