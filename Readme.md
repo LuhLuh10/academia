@@ -17,7 +17,7 @@ php -S localhost:8080 -t public public/index.php
 
 A API estará disponível em `http://localhost:8080`. Deixe o terminal aberto enquanto usa a API. Para parar o servidor, pressione `Ctrl+C`.
 
-Os registros são salvos no arquivo `src/situacoes.json`. O arquivo é criado quando o primeiro registro é cadastrado.
+As situações iniciais são João da Silva (ID 1) e Maria Souza (ID 2). Os dados são salvos no arquivo `src/situacoes.json` quando uma situação é cadastrada, atualizada ou removida.
 
 ## 3. Executar os testes
 
@@ -46,6 +46,8 @@ Requisições com dados devem estar em JSON e usar o cabeçalho `Content-Type: a
 | PUT | `/situacao/{id}` | Altera somente o campo `aprovado`. |
 | DELETE | `/situacao/{id}` | Remove a situação. |
 
+Use `GET /situacao` para listar todos os registros ou `GET /situacao/1` para consultar o registro de ID 1.
+
 O campo `aprovado` deve ser `true` ou `false`. O `PUT` deve receber somente esse campo. Exemplo:
 
 ```json
@@ -56,52 +58,36 @@ Ao cadastrar, a API retorna `201`. Consultas, atualizações e exclusões feitas
 
 ## Evidências de testes
 
-Os quatro endpoints foram testados via HTTP, com o servidor iniciado e sem registros anteriores. A sequência abaixo mostra as respostas e os códigos recebidos:
+As imagens abaixo mostram as requisições feitas no Postman e as respostas da API.
+
+### Verificação da API — `GET /status`
+
+![Resposta do endpoint GET /status](img/status.png)
+
+### Listagem — `GET /situacao`
+
+O resultado mostra as duas situações iniciais.
+
+![Lista de situações acadêmicas](img/get_situcoes.png)
+
+### Consulta por ID — `GET /situacao/1`
+
+![Consulta da situação com ID 1](img/situacao_1.png)
 
 ### Cadastro — `POST /situacao`
 
-```json
-{"id":1,"nome":"Maria da Silva","unidadeCurricular":"Desenvolvimento Web","aprovado":true}
-```
+![Cadastro de uma situação acadêmica](img/post.png)
 
-Código HTTP: `201`
+### Atualização — `PUT /situacao/1`
 
-### Consulta — `GET /situacao/1`
+O corpo da requisição contém somente o campo `aprovado`.
 
-```json
-{"nome":"Maria da Silva","unidadeCurricular":"Desenvolvimento Web","aprovado":true}
-```
-
-Código HTTP: `200`
-
-### Atualização somente de `aprovado` — `PUT /situacao/1`
-
-Requisição:
-
-```json
-{"aprovado":false}
-```
-
-Resposta:
-
-```json
-{"nome":"Maria da Silva","unidadeCurricular":"Desenvolvimento Web","aprovado":false}
-```
-
-Código HTTP: `200`
+![Atualização do campo aprovado](img/aprovado.png)
 
 ### Exclusão — `DELETE /situacao/1`
 
-```json
-{"mensagem":"Registro removido com sucesso."}
-```
+![Exclusão de uma situação acadêmica](img/delet.png)
 
-Código HTTP: `200`
+Os testes automatizados também confirmam que, depois da exclusão, o ID removido retorna `404`.
 
-Após excluir, uma nova consulta ao mesmo ID retornou:
 
-```json
-{"erro":"Estudante não encontrado."}
-```
-
-Código HTTP: `404`

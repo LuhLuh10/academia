@@ -6,10 +6,22 @@ use Slim\Exception\HttpException;
 use Slim\Factory\AppFactory;
 use Slim\Psr7\Factory\ResponseFactory;
 
-function lerSituacoes(string $arquivo): array
+$situacao = [
+    ['id' => 1,
+    'nome' => 'João da Silva',
+    'unidadeCurricular' => 'Programação Web',
+    'aprovado' => true,],
+
+    ['id' => 2,
+    'nome' => 'Maria Souza',
+    'unidadeCurricular' => 'Banco de Dados',
+    'aprovado' => false,]
+    ];
+
+function lerSituacoes(string $arquivo, array $situacoesIniciais): array
 {
     if (!file_exists($arquivo)) {
-        return [];
+        return $situacoesIniciais;
     }
 
     $conteudo = file_get_contents($arquivo);
@@ -70,8 +82,8 @@ $app->get('/status', function ($request, $response) {
 });
 
 // GET para listar
-$app->get('/situacao', function ($request, $response) use ($arquivo) {
-    $situacoes = lerSituacoes($arquivo);
+$app->get('/situacao', function ($request, $response) use ($arquivo, $situacao) {
+    $situacoes = lerSituacoes($arquivo, $situacao);
     $response->getBody()->write(json_encode($situacoes, JSON_UNESCAPED_UNICODE));
 
     return $response
@@ -79,8 +91,8 @@ $app->get('/situacao', function ($request, $response) use ($arquivo) {
         ->withStatus(200);
 });
 
-// POST para criar uma nova situação
-$app->post('/situacao', function ($request, $response) use ($arquivo) {
+// POST 
+$app->post('/situacao', function ($request, $response) use ($arquivo, $situacao) {
     $dados = $request->getParsedBody();
 
     if (!is_array($dados)
@@ -99,7 +111,7 @@ $app->post('/situacao', function ($request, $response) use ($arquivo) {
             ->withStatus(400);
     }
 
-    $situacoes = lerSituacoes($arquivo);
+    $situacoes = lerSituacoes($arquivo, $situacao);
     $proximoId = 1;
     foreach ($situacoes as $situacao) {
         $proximoId = max($proximoId, $situacao['id'] + 1);
@@ -124,8 +136,8 @@ $app->post('/situacao', function ($request, $response) use ($arquivo) {
 });
 
 // GET por ID
-$app->get('/situacao/{id}', function ($request, $response, $args) use ($arquivo) {
-    $situacoes = lerSituacoes($arquivo);
+$app->get('/situacao/{id}', function ($request, $response, $args) use ($arquivo, $situacao) {
+    $situacoes = lerSituacoes($arquivo, $situacao);
 
     foreach ($situacoes as $situacao) {
         if ($situacao['id'] === (int) $args['id']) {
@@ -150,7 +162,7 @@ $app->get('/situacao/{id}', function ($request, $response, $args) use ($arquivo)
 });
 
 // PUT
-$app->put('/situacao/{id}', function ($request, $response, $args) use ($arquivo) {
+$app->put('/situacao/{id}', function ($request, $response, $args) use ($arquivo, $situacao) {
     $dados = $request->getParsedBody();
 
     if (!is_array($dados)
@@ -166,7 +178,7 @@ $app->put('/situacao/{id}', function ($request, $response, $args) use ($arquivo)
             ->withStatus(400);
     }
 
-    $situacoes = lerSituacoes($arquivo);
+    $situacoes = lerSituacoes($arquivo, $situacao);
     foreach ($situacoes as &$situacao) {
         if ($situacao['id'] === (int) $args['id']) {
             $situacao['aprovado'] = $dados['aprovado'];
@@ -198,8 +210,8 @@ $app->put('/situacao/{id}', function ($request, $response, $args) use ($arquivo)
 });
 
 // DELETE
-$app->delete('/situacao/{id}', function ($request, $response, $args) use ($arquivo) {
-    $situacoes = lerSituacoes($arquivo);
+$app->delete('/situacao/{id}', function ($request, $response, $args) use ($arquivo, $situacao) {
+    $situacoes = lerSituacoes($arquivo, $situacao);
 
     foreach ($situacoes as $indice => $situacao) {
         if ($situacao['id'] === (int) $args['id']) {

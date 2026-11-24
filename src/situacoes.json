@@ -1,0 +1,14 @@
+[
+    {
+        "id": 2,
+        "nome": "Maria Souza",
+        "unidadeCurricular": "Banco de Dados",
+        "aprovado": false
+    },
+    {
+        "id": 3,
+        "nome": "Carlos Oliveira",
+        "unidadeCurricular": "Programação Web",
+        "aprovado": true
+    }
+]
